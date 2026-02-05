@@ -39,3 +39,5 @@ To install it manually:
 	```
 
 Note: Make sure to update the GOOGLE_API_KEY `export GOOGLE_API_KEY=<API_KEY>`
+
+`test_nano_banana.py` -> Works with Google API Key. 
