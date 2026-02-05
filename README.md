@@ -1,8 +1,24 @@
 # odyssey-hackathon
 
-## Quick Setup
+## Quick Setup (Conda)
 
-1. Install Python 3.14 (recommended: `pyenv`)
+1. Ensure you have Conda installed.
+2. Create the environment:
+   ```bash
+   conda env create -f environment.yml
+   ```
+   Or run:
+   ```bash
+   bash scripts/create_conda_env.sh
+   ```
+3. Activate the environment:
+   ```bash
+   conda activate odyssey-hackathon
+   ```
+
+## Quick Setup (venv)
+
+1. Install Python 3.12+
 2. Create and activate a virtual environment:
 	```bash
 	python3.14 -m venv .venv

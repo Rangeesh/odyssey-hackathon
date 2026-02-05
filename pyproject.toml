@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "odyssey-hackathon"
 version = "0.1.0"
 description = "Odyssey Hackathon project"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [ { name = "Your Name" } ]
@@ -17,7 +17,7 @@ dependencies = [
   "uvicorn[standard]==0.23.0",
   "requests>=2.31.0",
   "pytest>=7.4.0",
-  "git+https://github.com/odysseyml/odyssey-python.git",
+  "odyssey @ git+https://github.com/odysseyml/odyssey-python.git",
   "google-genai",
   "Pillow",
 ]

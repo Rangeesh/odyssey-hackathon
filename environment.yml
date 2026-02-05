@@ -1,0 +1,15 @@
+name: odyssey-hackathon
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - fastapi==0.100.0
+    - uvicorn[standard]==0.23.0
+    - requests>=2.31.0
+    - pytest>=7.4.0
+    - google-genai
+    - Pillow
+    - git+https://github.com/odysseyml/odyssey-python.git
+    - -e .
