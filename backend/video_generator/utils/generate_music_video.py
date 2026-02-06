@@ -1,3 +1,4 @@
+import subprocess
 import asyncio
 import os
 import re
@@ -10,17 +11,6 @@ from odyssey import Odyssey
 
 # Load environment variables
 load_dotenv()
-
-# Try importing moviepy, handle if missing
-try:
-    from moviepy import VideoFileClip, concatenate_videoclips
-
-    MOVIEPY_AVAILABLE = True
-except ImportError:
-    MOVIEPY_AVAILABLE = False
-    print(
-        "⚠️ MoviePy not found. Video stitching will be skipped (individual clips will be saved)."
-    )
 
 
 def parse_lrc_lyrics(lrc_text):
@@ -55,54 +45,139 @@ def get_lyrics_for_interval(parsed_lyrics, start_time, end_time):
 
 
 async def generate_video_segment_independent(
-    image_path, prompt, output_filename, duration=10
+    image_path, prompt, output_filename, duration=10, semaphore=None
 ):
     """
     Generates a video segment using a dedicated Odyssey client instance.
     This allows parallel execution if the API supports concurrent connections.
+    Uses a semaphore to limit concurrent connections to 3.
     """
-    print(f"🎬 Starting video generation for: {output_filename}")
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(3)
 
-    odyssey_key = os.environ.get("ODYSSEY_API_KEY")
-    if not odyssey_key:
-        print("Error: ODYSSEY_API_KEY not found.")
-        return None
+    async with semaphore:
+        print(f"🎬 Starting video generation for: {output_filename}")
 
-    client = Odyssey(api_key=odyssey_key)
-
-    try:
-        await client.connect(on_video_frame=lambda f: None)
-
-        # Start stream with image
-        stream_id = await client.start_stream(prompt, image_path=image_path)
-        print(f"   Stream started ({output_filename}): {stream_id}")
-
-        # Wait for the desired duration
-        await asyncio.sleep(duration)
-
-        # End stream
-        await client.end_stream()
-        print(f"   Stream ended ({output_filename}).")
-
-        recording = await client.get_recording(stream_id)
-        video_url = recording.video_url
-
-        if not video_url:
-            print(f"❌ No video URL found for {output_filename}.")
+        odyssey_key = os.environ.get("ODYSSEY_API_KEY")
+        if not odyssey_key:
+            print("Error: ODYSSEY_API_KEY not found.")
             return None
 
-        print(f"   Downloading video from: {video_url}")
-        v_response = requests.get(video_url)
-        with open(output_filename, "wb") as f:
-            f.write(v_response.content)
-        print(f"✅ Saved video segment: {output_filename}")
+        client = Odyssey(api_key=odyssey_key)
+
+        try:
+            await client.connect(on_video_frame=lambda f: None)
+
+            # Start stream with image (using 'image' parameter, not deprecated 'image_path')
+            stream_id = await client.start_stream(prompt, image=image_path)
+            print(f"   Stream started ({output_filename}): {stream_id}")
+
+            # Wait for the desired duration
+            await asyncio.sleep(duration)
+
+            # End stream
+            await client.end_stream()
+            print(f"   Stream ended ({output_filename}).")
+
+            # Wait for recording to be ready and retry if not found
+            recording = None
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    await asyncio.sleep(2)  # Wait 2 seconds before each attempt
+                    recording = await client.get_recording(stream_id)
+                    if recording and recording.video_url:
+                        break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    print(
+                        f"   Retry {attempt + 1}/{max_retries} for {output_filename}: {e}"
+                    )
+
+            if not recording:
+                print(f"❌ Recording not found for {output_filename} after retries.")
+                return None
+
+            video_url = recording.video_url
+
+            if not video_url:
+                print(f"❌ No video URL found for {output_filename}.")
+                return None
+
+            print(f"   Downloading video from: {video_url}")
+            v_response = requests.get(video_url)
+            with open(output_filename, "wb") as f:
+                f.write(v_response.content)
+            print(f"✅ Saved video segment: {output_filename}")
+            return output_filename
+
+        except Exception as e:
+            print(f"❌ Error generating video segment {output_filename}: {e}")
+            return None
+        finally:
+            await client.disconnect()
+
+
+def stitch_videos_ffmpeg(
+    video_files, output_filename="final_music_video.mp4", list_filename="list.txt"
+):
+    """
+    Stitches a list of video files together using FFmpeg.
+    """
+    if not video_files:
+        print("No video files to stitch.")
+        return None
+
+    print("\n🧵 Stitching videos together with FFmpeg...")
+
+    try:
+        # Get the song directory from the output filename
+        song_dir = os.path.dirname(output_filename)
+
+        # Create the list file for FFmpeg with relative paths
+        with open(list_filename, "w") as f:
+            for v in video_files:
+                f.write(f"file '{os.path.basename(v)}'\n")
+
+        # Run FFmpeg command from within the song directory
+        command = [
+            "ffmpeg",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            os.path.basename(list_filename),
+            "-c",
+            "copy",
+            os.path.basename(output_filename),
+            "-y",  # Overwrite output file if it exists
+        ]
+
+        result = subprocess.run(
+            command, check=True, capture_output=True, text=True, cwd=song_dir
+        )
+        print(result.stdout)
+        print(result.stderr)
+
+        print(f"\n🎉 Final video saved: {output_filename}")
         return output_filename
 
+    except FileNotFoundError:
+        print("Error: ffmpeg is not installed or not in your PATH.")
+        print("Please install ffmpeg to use this feature.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during ffmpeg execution: {e}")
+        print(f"FFmpeg stdout: {e.stdout}")
+        print(f"FFmpeg stderr: {e.stderr}")
     except Exception as e:
-        print(f"❌ Error generating video segment {output_filename}: {e}")
-        return None
+        print(f"An unexpected error occurred: {e}")
     finally:
-        await client.disconnect()
+        # Clean up the list file
+        if os.path.exists(list_filename):
+            os.remove(list_filename)
+    return None
 
 
 async def main():
@@ -120,10 +195,21 @@ async def main():
     if not query:
         query = "Bohemian Rhapsody Queen"
 
+    # Create a directory for the song
+    song_name = query.replace(" ", "_")
+    song_dir = song_name
+    images_dir = os.path.join(song_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+
     raw_lyrics = get_song_lyrics(query)
     if not raw_lyrics:
         print("Could not find lyrics. Exiting.")
         return
+
+    # Save lyrics to a file
+    lyrics_filename = os.path.join(song_dir, "lyrics.txt")
+    with open(lyrics_filename, "w") as f:
+        f.write(raw_lyrics)
 
     # Check if we got synced lyrics (LRC)
     is_lrc = "[" in raw_lyrics and "]" in raw_lyrics and ":" in raw_lyrics
@@ -171,8 +257,8 @@ async def main():
             f"Current Lyrics: {segment_lyrics}"
         )
 
-        img_filename = f"{query.replace(' ', '_')}_segment_{i}_image.png"
-        vid_filename = f"{query.replace(' ', '_')}_segment_{i}_video.mp4"
+        img_filename = os.path.join(images_dir, f"segment_{i}.png")
+        vid_filename = os.path.join(song_dir, f"segment_{i}.mp4")
 
         # Check if image already exists
         if os.path.exists(img_filename):
@@ -195,21 +281,27 @@ async def main():
         else:
             print("Skipping video generation for this segment due to image failure.")
 
-    # 4. Generate Videos (Parallel)
+    # 4. Generate Videos (Parallel with concurrency limit)
     video_files = []
     if segment_tasks_data:
         print(
             f"\n🚀 Starting parallel video generation for {len(segment_tasks_data)} segments..."
         )
+        # Create a semaphore to limit to 3 concurrent connections
+        semaphore = asyncio.Semaphore(3)
         tasks = [
-            generate_video_segment_independent(s["image"], s["prompt"], s["output"])
+            generate_video_segment_independent(
+                s["image"], s["prompt"], s["output"], semaphore=semaphore
+            )
             for s in segment_tasks_data
         ]
         results = await asyncio.gather(*tasks)
         # Filter out None results
         video_files = [r for r in results if r]
         # Sort by segment index to ensure correct order
-        video_files.sort(key=lambda x: int(re.search(r"segment_(\d+)_", x).group(1)))
+        video_files.sort(
+            key=lambda x: int(re.search(r"segment_(\d+)\.mp4", x).group(1))
+        )
 
     # 5. Stitch Videos
     if MOVIEPY_AVAILABLE and video_files:
@@ -222,9 +314,7 @@ async def main():
         except Exception as e:
             print(f"Error stitching videos: {e}")
     elif video_files:
-        print(
-            "\n⚠️ MoviePy not available or no videos generated. Individual segments saved:"
-        )
+        print("\n⚠️ No videos were generated, so stitching was skipped.")
         for v in video_files:
             print(f" - {v}")
 
