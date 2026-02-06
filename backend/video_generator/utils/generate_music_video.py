@@ -4,15 +4,77 @@ import os
 import re
 import time
 import requests
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 from .fetch_lyrics import get_song_lyrics
 from .lyrics_to_image import generate_image_from_lyrics
 from .sentiment_analysis import analyze_sentiment
 from odyssey import Odyssey
 
+# Handle both relative and absolute imports
+try:
+    from .fetch_lyrics import get_song_lyrics
+    from .lyrics_to_image import generate_image_from_lyrics
+except ImportError:
+    # When run directly, use absolute imports
+    sys.path.insert(0, os.path.dirname(__file__))
+    from fetch_lyrics import get_song_lyrics
+    from lyrics_to_image import generate_image_from_lyrics
+
 # Load environment variables
 load_dotenv()
 
+# Maximum video duration in seconds
+MAX_VIDEO_DURATION = 40  # 1 minute max
+
+
+def get_video_duration(video_path):
+    """
+    Gets the actual duration of a video file in seconds using ffprobe.
+    Returns None if the duration cannot be determined.
+    """
+    try:
+        command = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1:nokey=1",
+            video_path
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
+    except Exception as e:
+        print(f"⚠️ Error getting video duration for {video_path}: {e}")
+    return None
+
+
+def trim_video_to_duration(input_video, output_video, max_duration):
+    """
+    Trims a video to a maximum duration using FFmpeg.
+    Returns True if successful, False otherwise.
+    """
+    try:
+        command = [
+            "ffmpeg",
+            "-i", input_video,
+            "-t", str(max_duration),
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-y",
+            output_video
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            print(f"   ✅ Trimmed {os.path.basename(input_video)} to {max_duration}s")
+            return True
+        else:
+            print(f"   ⚠️ Failed to trim video: {result.stderr}")
+            return False
+    except Exception as e:
+        print(f"   ⚠️ Error trimming video: {e}")
+        return False
 
 def parse_lrc_lyrics(lrc_text):
     """
@@ -34,6 +96,67 @@ def parse_lrc_lyrics(lrc_text):
     return sorted(lines, key=lambda x: x[0])
 
 
+def get_intelligent_segments(parsed_lyrics, max_duration=5):
+    """
+    Creates video segments based on LRC timestamps (max_duration per segment).
+    If a gap between lyrics is > max_duration, subdivides it equally.
+    Returns list of (segment_index, start_time, end_time, lyrics_text).
+    Respects MAX_VIDEO_DURATION limit.
+    """
+    if not parsed_lyrics:
+        # No lyrics - create a single segment
+        return [(0, 0, min(10, MAX_VIDEO_DURATION), "(Instrumental / Music)")]
+    
+    segments = []
+    segment_index = 0
+    
+    # Get total duration from last timestamp + 5 seconds buffer, but cap at MAX_VIDEO_DURATION
+    total_duration = min(parsed_lyrics[-1][0] + 5, MAX_VIDEO_DURATION)
+    
+    current_time = 0
+    
+    for idx, (timestamp, text) in enumerate(parsed_lyrics):
+        # If there's a large gap before this timestamp, fill it
+        if timestamp - current_time > max_duration:
+            gap_duration = timestamp - current_time
+            num_sub_segments = int(gap_duration / max_duration) + (1 if gap_duration % max_duration else 0)
+            sub_duration = gap_duration / num_sub_segments
+            
+            for j in range(num_sub_segments):
+                seg_start = current_time + (j * sub_duration)
+                seg_end = current_time + ((j + 1) * sub_duration)
+                segments.append((segment_index, seg_start, seg_end, "(Instrumental / Music)"))
+                segment_index += 1
+            
+            current_time = timestamp
+        
+        # Now add segment for the current lyric
+        # Look ahead to next timestamp (or use max_duration)
+        if idx + 1 < len(parsed_lyrics):
+            next_timestamp = parsed_lyrics[idx + 1][0]
+            end_time = min(current_time + max_duration, next_timestamp)
+        else:
+            end_time = current_time + max_duration
+        
+        # Collect all lyrics until end_time
+        segment_lyrics = text
+        for future_idx in range(idx + 1, len(parsed_lyrics)):
+            if parsed_lyrics[future_idx][0] < end_time:
+                segment_lyrics += " " + parsed_lyrics[future_idx][1]
+            else:
+                break
+        
+        segments.append((segment_index, current_time, end_time, segment_lyrics.strip()))
+        segment_index += 1
+        current_time = end_time
+        
+        # Stop if we've gone past total duration
+        if current_time >= total_duration:
+            break
+    
+    return segments
+
+
 def get_lyrics_for_interval(parsed_lyrics, start_time, end_time):
     """
     Returns text of lyrics that fall within the interval.
@@ -45,17 +168,102 @@ def get_lyrics_for_interval(parsed_lyrics, start_time, end_time):
     return " ".join(texts).strip()
 
 
+def create_captions_file(lyrics, captions_path):
+    """
+    Creates a captions text file for FFmpeg drawtext filter.
+    Keeps text simple and raw (no escaping needed).
+    """
+    # Write raw lyrics as-is
+    with open(captions_path, "w", encoding="utf-8") as f:
+        f.write(lyrics)
+    
+    return captions_path
+
+
+def add_lyrics_to_video(input_video, captions_path, output_video):
+    """
+    Adds lyrics overlay to a video using FFmpeg drawtext filter.
+    Checks if output already exists to avoid re-processing.
+    """
+    if os.path.exists(output_video):
+        print(f"   Captions video {output_video} already exists. Skipping.")
+        return output_video
+    
+    if not os.path.exists(captions_path):
+        print(f"   ❌ Captions file not found: {captions_path}")
+        return input_video
+    
+    try:
+        print(f"   🎨 Adding lyrics overlay to {os.path.basename(input_video)}...")
+        
+        # Convert to absolute path for FFmpeg
+        abs_captions_path = os.path.abspath(captions_path)
+        
+        # FFmpeg command with drawtext filter - NO QUOTES around file path for subprocess
+        filter_str = f"drawtext=textfile={abs_captions_path}:fontcolor=white:fontsize=36:x=(w-text_w)/2:y=h-100:line_spacing=4:box=1:boxcolor=black@0.5:boxborderw=5"
+        
+        command = [
+            "ffmpeg",
+            "-i", input_video,
+            "-vf", filter_str,
+            "-c:a", "copy",
+            "-y",
+            output_video
+        ]
+        
+        # Debug: print the command being run
+        print(f"   DEBUG: Captions file: {abs_captions_path} (exists: {os.path.exists(abs_captions_path)})")
+        print(f"   DEBUG: FFmpeg filter: {filter_str}")
+        
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        
+        if result.returncode != 0:
+            print(f"   ⚠️ FFmpeg error (full stderr):")
+            print(result.stderr)
+            print(f"   ⚠️ FFmpeg may need a font file. Trying with font fallback...")
+            # Return the input video if FFmpeg fails
+            return input_video
+        
+        print(f"   ✅ Added lyrics to {os.path.basename(output_video)}")
+        return output_video
+        
+    except FileNotFoundError:
+        print(f"   ⚠️ FFmpeg not found. Returning video without captions.")
+        return input_video
+    except Exception as e:
+        print(f"   ⚠️ Error adding lyrics: {e}. Returning video without captions.")
+        return input_video
+
+
 async def generate_video_segment_independent(
-    image_path, prompt, output_filename, duration=10, semaphore=None
+    image_path, prompt, output_filename, duration=5, captions_path=None, semaphore=None
 ):
     """
     Generates a video segment using a dedicated Odyssey client instance.
+    Applies lyrics overlay if captions_path is provided.
     This allows parallel execution if the API supports concurrent connections.
     Uses a semaphore to limit concurrent connections to 3.
     """
     if semaphore is None:
         semaphore = asyncio.Semaphore(3)
-
+    
+    # Check if video already exists (final or raw)
+    raw_video_path = output_filename.replace(".mp4", "_raw.mp4")
+    if os.path.exists(output_filename):
+        print(f"🎬 Video {output_filename} already exists. Skipping generation.")
+        return output_filename
+    if os.path.exists(raw_video_path):
+        print(f"🎬 Raw video {raw_video_path} already exists. Skipping Odyssey generation.")
+        # If we have the raw video, try to apply captions if not done yet
+        if captions_path and os.path.exists(captions_path):
+            final_video = add_lyrics_to_video(raw_video_path, captions_path, output_filename)
+            if final_video == output_filename and os.path.exists(raw_video_path):
+                os.remove(raw_video_path)
+            return final_video
+        else:
+            os.rename(raw_video_path, output_filename)
+            return output_filename
+    
     async with semaphore:
         print(f"🎬 Starting video generation for: {output_filename}")
 
@@ -70,7 +278,7 @@ async def generate_video_segment_independent(
             await client.connect(on_video_frame=lambda f: None)
 
             # Start stream with image (using 'image' parameter, not deprecated 'image_path')
-            stream_id = await client.start_stream(prompt, image=image_path)
+            stream_id = await client.start_stream(prompt, portrait=False, image=image_path)
             print(f"   Stream started ({output_filename}): {stream_id}")
 
             # Wait for the desired duration
@@ -95,9 +303,9 @@ async def generate_video_segment_independent(
                             f"   Failed to get recording after {max_retries} attempts: {e}"
                         )
                         # Don't raise, just let it fail gracefully
-                    print(
-                        f"   Retry {attempt + 1}/{max_retries} for {output_filename}: {e}"
-                    )
+                        print(
+                            f"   Retry {attempt + 1}/{max_retries} for {output_filename}: {e}"
+                        )
 
             if not recording:
                 print(f"❌ Recording not found for {output_filename} after retries.")
@@ -111,10 +319,24 @@ async def generate_video_segment_independent(
 
             print(f"   Downloading video from: {video_url}")
             v_response = requests.get(video_url)
-            with open(output_filename, "wb") as f:
+            
+            # Save raw video to temporary file
+            raw_video_path = output_filename.replace(".mp4", "_raw.mp4")
+            with open(raw_video_path, "wb") as f:
                 f.write(v_response.content)
-            print(f"✅ Saved video segment: {output_filename}")
-            return output_filename
+            print(f"✅ Saved raw video segment: {raw_video_path}")
+            
+            # Apply lyrics overlay if captions file provided
+            if captions_path and os.path.exists(captions_path):
+                final_video = add_lyrics_to_video(raw_video_path, captions_path, output_filename)
+                # Clean up raw video after captions applied
+                if final_video == output_filename and os.path.exists(raw_video_path):
+                    os.remove(raw_video_path)
+                return final_video
+            else:
+                # No captions, return raw video
+                os.rename(raw_video_path, output_filename)
+                return output_filename
 
         except Exception as e:
             print(f"❌ Error generating video segment {output_filename}: {e}")
@@ -123,14 +345,74 @@ async def generate_video_segment_independent(
             await client.disconnect()
 
 
-def stitch_videos_ffmpeg(
-    video_files, output_filename="final_music_video.mp4", list_filename="list.txt"
-):
+def validate_and_trim_videos(video_files, max_duration=MAX_VIDEO_DURATION):
+    """
+    Validates video durations and trims files if necessary to stay within max_duration.
+    Returns a list of validated/trimmed video paths.
+    """
+    print(f"\n📏 Checking video durations (max: {max_duration}s)...")
+    
+    validated_videos = []
+    total_duration = 0
+    
+    for i, video_path in enumerate(video_files):
+        if not os.path.exists(video_path):
+            print(f"   ⚠️ Video not found: {video_path}")
+            continue
+        
+        actual_duration = get_video_duration(video_path)
+        if actual_duration is None:
+            print(f"   ⚠️ Could not determine duration of {os.path.basename(video_path)}")
+            validated_videos.append(video_path)
+            continue
+        
+        remaining_budget = max_duration - total_duration
+        
+        if actual_duration > remaining_budget:
+            # Need to trim this video
+            trimmed_path = video_path.replace(".mp4", "_trimmed.mp4")
+            print(f"   ⚠️ {os.path.basename(video_path)}: {actual_duration:.1f}s exceeds budget of {remaining_budget:.1f}s")
+            
+            if trim_video_to_duration(video_path, trimmed_path, remaining_budget):
+                validated_videos.append(trimmed_path)
+                total_duration += remaining_budget
+                print(f"   ✅ Total duration so far: {total_duration:.1f}s / {max_duration}s")
+                # Stop if we've hit the max
+                if total_duration >= max_duration:
+                    print(f"   ⚠️ Reached maximum duration limit. Stopping video inclusion.")
+                    break
+            else:
+                # Trimming failed, skip this video
+                print(f"   ⚠️ Failed to trim {os.path.basename(video_path)}, skipping.")
+        else:
+            # Video fits within budget
+            validated_videos.append(video_path)
+            total_duration += actual_duration
+            print(f"   ✅ {os.path.basename(video_path)}: {actual_duration:.1f}s (total: {total_duration:.1f}s / {max_duration}s)")
+            
+            # Stop if we've hit the max
+            if total_duration >= max_duration:
+                print(f"   ⚠️ Reached maximum duration limit. Stopping video inclusion.")
+                break
+    
+    print(f"\n📊 Final video duration: {total_duration:.1f}s / {max_duration}s")
+    return validated_videos
+
+
+def stitch_videos_ffmpeg(video_files, output_filename="final_music_video.mp4", list_filename="list.txt"):
     """
     Stitches a list of video files together using FFmpeg.
+    Validates durations before stitching to ensure compliance with MAX_VIDEO_DURATION.
     """
     if not video_files:
         print("No video files to stitch.")
+        return None
+
+    # Validate and trim videos to stay within max duration
+    video_files = validate_and_trim_videos(video_files, MAX_VIDEO_DURATION)
+    
+    if not video_files:
+        print("No valid videos to stitch after validation.")
         return None
 
     print("\n🧵 Stitching videos together with FFmpeg...")
@@ -239,20 +521,27 @@ async def main():
     # 3. Generate Images (Sequential to avoid Gemini rate limits)
     print("\n📸 Generating images for all segments first...")
 
-    for i in range(6):
-        start_time = i * 10
-        end_time = (i + 1) * 10
+    # Get intelligent segments based on LRC timestamps
+    if is_lrc:
+        segments = get_intelligent_segments(parsed_lyrics, max_duration=5)
+    else:
+        # Fallback: create segments that fit within MAX_VIDEO_DURATION
+        # Use 10-second segments up to the max duration
+        segments = []
+        for i in range(MAX_VIDEO_DURATION // 10):
+            start = i * 10
+            end = (i + 1) * 10
+            if start >= MAX_VIDEO_DURATION:
+                break
+            end = min(end, MAX_VIDEO_DURATION)
+            segments.append((i, start, end, "(Instrumental / Music)"))
+    
+    total_segments = len(segments)
+    
+    for segment_index, start_time, end_time, segment_lyrics in segments:
+        print(f"\n--- Preparing Segment {segment_index + 1}/{total_segments} ({start_time:.1f}s - {end_time:.1f}s) ---")
 
-        print(f"\n--- Preparing Segment {i + 1}/6 ({start_time}s - {end_time}s) ---")
-
-        # Get lyrics for this segment
-        segment_lyrics = ""
-        if is_lrc:
-            segment_lyrics = get_lyrics_for_interval(
-                parsed_lyrics, start_time, end_time
-            )
-
-        if not segment_lyrics:
+        if not segment_lyrics or segment_lyrics == "(Instrumental / Music)":
             segment_lyrics = "(Instrumental / Music)"
 
         print(f"🎵 Lyrics: {segment_lyrics}")
@@ -265,8 +554,9 @@ async def main():
             f"Current Lyrics: {segment_lyrics}"
         )
 
-        img_filename = os.path.join(images_dir, f"segment_{i}.png")
-        vid_filename = os.path.join(song_dir, f"segment_{i}.mp4")
+        img_filename = os.path.join(images_dir, f"segment_{segment_index}.png")
+        vid_filename = os.path.join(song_dir, f"segment_{segment_index}.mp4")
+        duration = end_time - start_time
 
         # Check if image already exists
         if os.path.exists(img_filename):
@@ -274,16 +564,29 @@ async def main():
             generated_img_path = img_filename
         else:
             generated_img_path = generate_image_from_lyrics(
-                lyrics_context, output_file=img_filename, sentiment=sentiment
+                lyrics_context, 
+                output_file=img_filename, 
+                sentiment=sentiment,
+                segment_lyrics=segment_lyrics
             )
 
         if generated_img_path:
-            video_prompt = f"Subtle animation of {segment_lyrics}, {sentiment.lower()} cartoon style, minimal motion, atmospheric"
+            video_prompt = f"Subtle animation of {segment_lyrics}, {sentiment.lower()} cartoon style, minimal motion, atmospheric, landscape orientation"
+            
+            # Create captions file for this segment
+            captions_dir = os.path.join(song_dir, "captions")
+            os.makedirs(captions_dir, exist_ok=True)
+            captions_filename = os.path.join(captions_dir, f"segment_{segment_index}_captions.txt")
+            captions_path = create_captions_file(segment_lyrics, captions_filename)
+            
             segment_tasks_data.append(
                 {
                     "image": generated_img_path,
                     "prompt": video_prompt,
                     "output": vid_filename,
+                    "captions": captions_path,
+                    "lyrics": segment_lyrics,
+                    "duration": duration,
                 }
             )
         else:
@@ -299,7 +602,12 @@ async def main():
         semaphore = asyncio.Semaphore(3)
         tasks = [
             generate_video_segment_independent(
-                s["image"], s["prompt"], s["output"], semaphore=semaphore
+                s["image"], 
+                s["prompt"], 
+                s["output"],
+                duration=s.get("duration", 5),  # Use actual segment duration
+                captions_path=s.get("captions"),
+                semaphore=semaphore
             )
             for s in segment_tasks_data
         ]
@@ -307,24 +615,15 @@ async def main():
         # Filter out None results
         video_files = [r for r in results if r]
         # Sort by segment index to ensure correct order
-        video_files.sort(
-            key=lambda x: int(re.search(r"segment_(\d+)\.mp4", x).group(1))
-        )
+        video_files.sort(key=lambda x: int(re.search(r"segment_(\d+)(?:_raw)?\.mp4", x).group(1)))
 
     # 5. Stitch Videos
-    if MOVIEPY_AVAILABLE and video_files:
-        print("\n🧵 Stitching videos together...")
-        try:
-            clips = [VideoFileClip(v) for v in video_files]
-            final_clip = concatenate_videoclips(clips)
-            final_clip.write_videofile("final_music_video.mp4", fps=24)
-            print("\n🎉 Final video saved: final_music_video.mp4")
-        except Exception as e:
-            print(f"Error stitching videos: {e}")
-    elif video_files:
+    if video_files:
+        output_filename = os.path.join(song_dir, f"{song_name}_final.mp4")
+        list_filename = os.path.join(song_dir, "list.txt")
+        stitch_videos_ffmpeg(video_files, output_filename, list_filename)
+    else:
         print("\n⚠️ No videos were generated, so stitching was skipped.")
-        for v in video_files:
-            print(f" - {v}")
 
 
 if __name__ == "__main__":
