@@ -29,4 +29,6 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "odyssey_web.wsgi:application"]
+RUN python manage.py collectstatic --noinput
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "0", "--error-logfile", "-", "--access-logfile", "-", "odyssey_web.wsgi:application"]
