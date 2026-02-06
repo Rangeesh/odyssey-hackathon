@@ -76,16 +76,18 @@ def generate_image_from_lyrics(
     lyrics: str, 
     output_file: str = "lyrics_image.png", 
     sentiment: str = None, 
-    segment_lyrics: str = None
+    segment_lyrics: str = None,
+    context: str = None
 ):
     """
     Generates an image based on the provided song lyrics using Google's Gemini 2.5 Flash Image model.
     
     Args:
-        lyrics: Full song lyrics for emotional context
+        lyrics: The main lyrics to visualize
         output_file: Output filename for the generated image
         sentiment: Sentiment/mood of the song
         segment_lyrics: Specific segment lyrics to display in the overlay (if different from full lyrics)
+        context: Additional context about the song (title, artist, full lyrics summary)
     """
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
@@ -134,8 +136,11 @@ def generate_image_from_lyrics(
     overlay_lyrics = segment_lyrics if segment_lyrics else lyrics
 
     # Construct a prompt that encourages artistic interpretation
+    context_section = f"Context: {context}\n\n" if context else ""
+    
     prompt = (
         f"Create a single cohesive digital illustration in a {style_description} with clean outlines and controlled detail.\n\n"
+        f"{context_section}"
         f"The illustration represents the emotional core and imagery of the following song lyrics:\n"
         f"“{lyrics}”\n\n"
         f"Depict one primary scene that symbolically captures the overall mood of the lyrics ({sentiment if sentiment else 'melancholic'}) rather than illustrating each line literally. "

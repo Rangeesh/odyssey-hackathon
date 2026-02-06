@@ -548,10 +548,9 @@ async def main():
 
         # Generate Image
         # Prompt combines full context (mood) and specific segment
-        lyrics_context = (
+        context_str = (
             f"Song: {query}. "
-            f"Context: {full_lyrics_text[:200]}... "
-            f"Current Lyrics: {segment_lyrics}"
+            f"Context: {full_lyrics_text[:200]}..."
         )
 
         img_filename = os.path.join(images_dir, f"segment_{segment_index}.png")
@@ -564,10 +563,11 @@ async def main():
             generated_img_path = img_filename
         else:
             generated_img_path = generate_image_from_lyrics(
-                lyrics_context, 
+                segment_lyrics, 
                 output_file=img_filename, 
                 sentiment=sentiment,
-                segment_lyrics=segment_lyrics
+                segment_lyrics=segment_lyrics,
+                context=context_str
             )
 
         if generated_img_path:
