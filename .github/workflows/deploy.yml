@@ -54,6 +54,12 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           image: ${{ env.AR_REPO }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
           region: ${{ env.REGION }}
+          flags: |
+            --max-instances=1
+            --min-instances=1
+            --memory=2Gi
+            --timeout=600
+            --concurrency=80
           env_vars: |
             DEBUG=False
             ALLOWED_HOSTS=*
