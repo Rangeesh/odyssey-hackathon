@@ -1,0 +1,8 @@
+django
+requests
+python-dotenv
+google-genai
+Pillow
+gunicorn
+whitenoise
+git+https://github.com/odysseyml/odyssey-python.git
