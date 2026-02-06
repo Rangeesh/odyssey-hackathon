@@ -1,13 +1,16 @@
 {% if jobs %}
     {% for job in jobs %}
-    <div class="job-card status-{{ job.status }}">
+    <div class="job-card status-{{ job.status }} {% if forloop.counter > 1 %}minimized{% endif %}" 
+         onclick="toggleJobCard(this, event)"
+         data-job-id="{{ job.id }}">
         <div class="job-header">
             <h3>{{ job.song_title }}</h3>
             <div class="job-actions">
                 <span class="status-badge status-{{ job.status }}">{{ job.get_status_display }}</span>
                 {% if job.status == 'pending' or job.status == 'processing' %}
-                <button class="cancel-btn" onclick="cancelJob('{{ job.id }}')">❌ Cancel</button>
+                <button class="cancel-btn" onclick="cancelJob('{{ job.id }}'); event.stopPropagation();">❌ Cancel</button>
                 {% endif %}
+                <span class="minimize-icon">▼</span>
             </div>
         </div>
         <div class="job-meta">
@@ -20,7 +23,7 @@
         </div>
         <p class="status-message">{{ job.message }}</p>
         
-        {% if job.segments %}
+        {% if job.status != 'completed' and job.segments %}
         <div class="segments-grid">
             {% for segment in job.segments %}
             <div class="segment-card {% if segment.status == 'video_ready' %}completed{% elif segment.status == 'image_ready' %}image-ready{% endif %}">
@@ -47,11 +50,11 @@
         
         {% if job.status == 'completed' and job.video_file %}
         <div class="video-container">
-            <video controls width="100%">
-                <source src="{{ job.video_file.url }}" type="video/mp4">
+            <video controls playsinline width="100%">
+                <source src="{{ job.video_file }}" type="video/mp4">
                 Your browser does not support the video tag.
             </video>
-            <a href="{{ job.video_file.url }}" download class="download-btn">⬇️ Download Video</a>
+            <a href="{{ job.video_file }}" download class="download-btn">⬇️ Download Final Video</a>
         </div>
         {% endif %}
     </div>

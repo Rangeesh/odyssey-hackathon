@@ -69,46 +69,86 @@
 {% block extra_js %}
 <script>
     // Auto-refresh jobs every 3 seconds
+    let isVideoPlaying = false;
+    
+    // Store user-modified state of jobs
+    // Map: jobId -> boolean (true = minimized, false = maximized)
+    // Only stores state if user explicitly interacted with the card
+    let userJobStates = new Map();
+
+    // Add event listeners to track video playing state
+    document.addEventListener('play', function(e) {
+        if(e.target.tagName === 'VIDEO') {
+            isVideoPlaying = true;
+        }
+    }, true);
+    
+    document.addEventListener('pause', function(e) {
+        if(e.target.tagName === 'VIDEO') {
+            isVideoPlaying = false;
+        }
+    }, true);
+    
+    document.addEventListener('ended', function(e) {
+        if(e.target.tagName === 'VIDEO') {
+            isVideoPlaying = false;
+        }
+    }, true);
+
     setInterval(function() {
+        // Don't refresh if a video is playing
+        if (isVideoPlaying) return;
+        
         fetch('{% url "job_list_partial" %}')
             .then(response => response.text())
             .then(html => {
-                document.getElementById('jobs-list').innerHTML = html;
+                const currentContainer = document.getElementById('jobs-list');
+                
+                // Simple equality check to prevent unnecessary DOM updates
+                if (currentContainer.innerHTML.trim() === html.trim()) {
+                    return;
+                }
+                
+                // Create a temporary container to parse the new HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = html;
+                
+                // Apply minimized states BEFORE injecting into the DOM
+                // This prevents the "flash" of expanded content causing layout shifts
+                tempDiv.querySelectorAll('.job-card').forEach(card => {
+                    const jobId = card.getAttribute('data-job-id');
+                    if (jobId && userJobStates.has(jobId)) {
+                        const shouldBeMinimized = userJobStates.get(jobId);
+                        if (shouldBeMinimized) {
+                            card.classList.add('minimized');
+                        } else {
+                            card.classList.remove('minimized');
+                        }
+                    }
+                });
+                
+                // Now swap the content
+                currentContainer.innerHTML = tempDiv.innerHTML;
             })
             .catch(error => console.error('Error refreshing jobs:', error));
     }, 3000);
 
-    // Cancel job function
-    function cancelJob(jobId) {
-        if (!confirm('Are you sure you want to cancel this video generation?')) {
+    // Toggle job card minimize/maximize
+    function toggleJobCard(card, event) {
+        // Don't toggle if clicking on buttons or links
+        if (event.target.closest('button') || event.target.closest('a') || event.target.closest('video')) {
             return;
         }
-
-        fetch(`/cancel/${jobId}/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert(data.message);
-                // Refresh the job list immediately
-                fetch('{% url "job_list_partial" %}')
-                    .then(response => response.text())
-                    .then(html => {
-                        document.getElementById('jobs-list').innerHTML = html;
-                    });
-            } else {
-                alert('Error: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error cancelling job:', error);
-            alert('Failed to cancel job. Please try again.');
-        });
+        
+        // Toggle class
+        card.classList.toggle('minimized');
+        
+        // Store user preference
+        const jobId = card.getAttribute('data-job-id');
+        const isMinimized = card.classList.contains('minimized');
+        if (jobId) {
+            userJobStates.set(jobId, isMinimized);
+        }
     }
 
     // Get CSRF token from cookies

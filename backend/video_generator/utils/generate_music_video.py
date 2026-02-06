@@ -81,16 +81,17 @@ async def generate_video_segment_independent(
 
             # Wait for recording to be ready and retry if not found
             recording = None
-            max_retries = 5
+            max_retries = 10  # Increased retries
             for attempt in range(max_retries):
                 try:
-                    await asyncio.sleep(2)  # Wait 2 seconds before each attempt
+                    await asyncio.sleep(3)  # Wait 3 seconds before each attempt
                     recording = await client.get_recording(stream_id)
                     if recording and recording.video_url:
                         break
                 except Exception as e:
                     if attempt == max_retries - 1:
-                        raise
+                        print(f"   Failed to get recording after {max_retries} attempts: {e}")
+                        # Don't raise, just let it fail gracefully
                     print(
                         f"   Retry {attempt + 1}/{max_retries} for {output_filename}: {e}"
                     )

@@ -221,7 +221,22 @@ def run_video_generation(job_id):
             final_clip = concatenate_videoclips(clips)
             final_clip.write_videofile(final_output, fps=24)
 
-            job.video_file = final_output
+            # Ensure the path is absolute or relative to MEDIA_ROOT for Django to serve it
+            # The current path is relative to the backend directory, e.g. "media/generated_content/..."
+            # When serving via Django static/media, we usually want the URL path component
+            # If MEDIA_URL is "/media/", then we want "generated_content/..."
+            
+            # Assuming output_dir is "media/generated_content"
+            # We want to store "/media/generated_content/..." in the DB if that's how it's served
+            # Or just the relative path if using .url on a FileField (but we use CharField)
+            
+            # Let's make sure it starts with /media/ if it doesn't already
+            if not final_output.startswith("/"):
+                db_video_path = "/" + final_output
+            else:
+                db_video_path = final_output
+
+            job.video_file = db_video_path
             job.status = "completed"
             job.progress = 100
             job.message = "Done!"
