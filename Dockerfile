@@ -28,7 +28,14 @@ ENV PORT=8080
 # Expose port
 EXPOSE 8080
 
-# Run the application
+# Remove local dev database so Cloud Run starts fresh
+RUN rm -f db.sqlite3
+
+# Collect static files and create fresh database
 RUN python manage.py collectstatic --noinput
+RUN python manage.py migrate --noinput
+
+# Create media directory
+RUN mkdir -p media/generated_content
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "0", "--error-logfile", "-", "--access-logfile", "-", "odyssey_web.wsgi:application"]
