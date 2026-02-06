@@ -1,3 +1,4 @@
+import subprocess
 import asyncio
 import os
 import re
@@ -11,16 +12,7 @@ from odyssey import Odyssey
 # Load environment variables
 load_dotenv()
 
-# Try importing moviepy, handle if missing
-try:
-    from moviepy.editor import VideoFileClip, concatenate_videoclips
 
-    MOVIEPY_AVAILABLE = True
-except ImportError:
-    MOVIEPY_AVAILABLE = False
-    print(
-        "⚠️ MoviePy not found. Video stitching will be skipped (individual clips will be saved)."
-    )
 
 
 def parse_lrc_lyrics(lrc_text):
@@ -127,6 +119,59 @@ async def generate_video_segment_independent(
             await client.disconnect()
 
 
+def stitch_videos_ffmpeg(video_files, output_filename="final_music_video.mp4", list_filename="list.txt"):
+    """
+    Stitches a list of video files together using FFmpeg.
+    """
+    if not video_files:
+        print("No video files to stitch.")
+        return None
+
+    print("\n🧵 Stitching videos together with FFmpeg...")
+
+    try:
+        # Get the song directory from the output filename
+        song_dir = os.path.dirname(output_filename)
+
+        # Create the list file for FFmpeg with relative paths
+        with open(list_filename, "w") as f:
+            for v in video_files:
+                f.write(f"file '{os.path.basename(v)}'\n")
+
+        # Run FFmpeg command from within the song directory
+        command = [
+            "ffmpeg",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", os.path.basename(list_filename),
+            "-c", "copy",
+            os.path.basename(output_filename),
+            "-y"  # Overwrite output file if it exists
+        ]
+        
+        result = subprocess.run(command, check=True, capture_output=True, text=True, cwd=song_dir)
+        print(result.stdout)
+        print(result.stderr)
+
+        print(f"\n🎉 Final video saved: {output_filename}")
+        return output_filename
+
+    except FileNotFoundError:
+        print("Error: ffmpeg is not installed or not in your PATH.")
+        print("Please install ffmpeg to use this feature.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during ffmpeg execution: {e}")
+        print(f"FFmpeg stdout: {e.stdout}")
+        print(f"FFmpeg stderr: {e.stderr}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+    finally:
+        # Clean up the list file
+        if os.path.exists(list_filename):
+            os.remove(list_filename)
+    return None
+
+
 async def main():
     # 1. Get Song Info
     import sys
@@ -142,10 +187,21 @@ async def main():
     if not query:
         query = "Bohemian Rhapsody Queen"
 
+    # Create a directory for the song
+    song_name = query.replace(' ', '_')
+    song_dir = song_name
+    images_dir = os.path.join(song_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+
     raw_lyrics = get_song_lyrics(query)
     if not raw_lyrics:
         print("Could not find lyrics. Exiting.")
         return
+
+    # Save lyrics to a file
+    lyrics_filename = os.path.join(song_dir, "lyrics.txt")
+    with open(lyrics_filename, "w") as f:
+        f.write(raw_lyrics)
 
     # Check if we got synced lyrics (LRC)
     is_lrc = "[" in raw_lyrics and "]" in raw_lyrics and ":" in raw_lyrics
@@ -193,8 +249,8 @@ async def main():
             f"Current Lyrics: {segment_lyrics}"
         )
 
-        img_filename = f"{query.replace(' ', '_')}_segment_{i}_image.png"
-        vid_filename = f"{query.replace(' ', '_')}_segment_{i}_video.mp4"
+        img_filename = os.path.join(images_dir, f"segment_{i}.png")
+        vid_filename = os.path.join(song_dir, f"segment_{i}.mp4")
 
         # Check if image already exists
         if os.path.exists(img_filename):
@@ -233,24 +289,17 @@ async def main():
         # Filter out None results
         video_files = [r for r in results if r]
         # Sort by segment index to ensure correct order
-        video_files.sort(key=lambda x: int(re.search(r"segment_(\d+)_", x).group(1)))
+        video_files.sort(key=lambda x: int(re.search(r"segment_(\d+)\.mp4", x).group(1)))
 
     # 5. Stitch Videos
-    if MOVIEPY_AVAILABLE and video_files:
-        print("\n🧵 Stitching videos together...")
-        try:
-            clips = [VideoFileClip(v) for v in video_files]
-            final_clip = concatenate_videoclips(clips)
-            final_clip.write_videofile("final_music_video.mp4", fps=24)
-            print("\n🎉 Final video saved: final_music_video.mp4")
-        except Exception as e:
-            print(f"Error stitching videos: {e}")
-    elif video_files:
+    if video_files:
+        output_filename = os.path.join(song_dir, f"{song_name}_final.mp4")
+        list_filename = os.path.join(song_dir, "list.txt")
+        stitch_videos_ffmpeg(video_files, output_filename, list_filename)
+    else:
         print(
-            "\n⚠️ MoviePy not available or no videos generated. Individual segments saved:"
+            "\n⚠️ No videos were generated, so stitching was skipped."
         )
-        for v in video_files:
-            print(f" - {v}")
 
 
 if __name__ == "__main__":

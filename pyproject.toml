@@ -20,6 +20,7 @@ dependencies = [
   "odyssey @ git+https://github.com/odysseyml/odyssey-python.git",
   "google-genai",
   "Pillow",
+  "python-dotenv",
 ]
 
 [tool.setuptools]
