@@ -90,7 +90,9 @@ async def generate_video_segment_independent(
                         break
                 except Exception as e:
                     if attempt == max_retries - 1:
-                        print(f"   Failed to get recording after {max_retries} attempts: {e}")
+                        print(
+                            f"   Failed to get recording after {max_retries} attempts: {e}"
+                        )
                         # Don't raise, just let it fail gracefully
                     print(
                         f"   Retry {attempt + 1}/{max_retries} for {output_filename}: {e}"
