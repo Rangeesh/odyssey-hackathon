@@ -57,5 +57,6 @@ jobs:
           env_vars: |
             DEBUG=False
             ALLOWED_HOSTS=*
+            CSRF_TRUSTED_ORIGINS=https://odyssey-hackathon-887426494699.europe-west1.run.app
             GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
             ODYSSEY_API_KEY=${{ secrets.ODYSSEY_API_KEY }}

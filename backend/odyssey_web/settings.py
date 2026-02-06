@@ -64,6 +64,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5176",
 ]
 
+# CSRF trusted origins (needed for Cloud Run)
+CSRF_TRUSTED_ORIGINS = os.environ.get(
+    "CSRF_TRUSTED_ORIGINS",
+    "http://localhost:8011,http://localhost:8080"
+).split(",")
+
+
 ROOT_URLCONF = "odyssey_web.urls"
 
 TEMPLATES = [
