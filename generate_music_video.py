@@ -55,54 +55,76 @@ def get_lyrics_for_interval(parsed_lyrics, start_time, end_time):
 
 
 async def generate_video_segment_independent(
-    image_path, prompt, output_filename, duration=10
+    image_path, prompt, output_filename, duration=10, semaphore=None
 ):
     """
     Generates a video segment using a dedicated Odyssey client instance.
     This allows parallel execution if the API supports concurrent connections.
+    Uses a semaphore to limit concurrent connections to 3.
     """
-    print(f"🎬 Starting video generation for: {output_filename}")
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(3)
+    
+    async with semaphore:
+        print(f"🎬 Starting video generation for: {output_filename}")
 
-    odyssey_key = os.environ.get("ODYSSEY_API_KEY")
-    if not odyssey_key:
-        print("Error: ODYSSEY_API_KEY not found.")
-        return None
-
-    client = Odyssey(api_key=odyssey_key)
-
-    try:
-        await client.connect(on_video_frame=lambda f: None)
-
-        # Start stream with image
-        stream_id = await client.start_stream(prompt, image_path=image_path)
-        print(f"   Stream started ({output_filename}): {stream_id}")
-
-        # Wait for the desired duration
-        await asyncio.sleep(duration)
-
-        # End stream
-        await client.end_stream()
-        print(f"   Stream ended ({output_filename}).")
-
-        recording = await client.get_recording(stream_id)
-        video_url = recording.video_url
-
-        if not video_url:
-            print(f"❌ No video URL found for {output_filename}.")
+        odyssey_key = os.environ.get("ODYSSEY_API_KEY")
+        if not odyssey_key:
+            print("Error: ODYSSEY_API_KEY not found.")
             return None
 
-        print(f"   Downloading video from: {video_url}")
-        v_response = requests.get(video_url)
-        with open(output_filename, "wb") as f:
-            f.write(v_response.content)
-        print(f"✅ Saved video segment: {output_filename}")
-        return output_filename
+        client = Odyssey(api_key=odyssey_key)
 
-    except Exception as e:
-        print(f"❌ Error generating video segment {output_filename}: {e}")
-        return None
-    finally:
-        await client.disconnect()
+        try:
+            await client.connect(on_video_frame=lambda f: None)
+
+            # Start stream with image (using 'image' parameter, not deprecated 'image_path')
+            stream_id = await client.start_stream(prompt, image=image_path)
+            print(f"   Stream started ({output_filename}): {stream_id}")
+
+            # Wait for the desired duration
+            await asyncio.sleep(duration)
+
+            # End stream
+            await client.end_stream()
+            print(f"   Stream ended ({output_filename}).")
+
+            # Wait for recording to be ready and retry if not found
+            recording = None
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    await asyncio.sleep(2)  # Wait 2 seconds before each attempt
+                    recording = await client.get_recording(stream_id)
+                    if recording and recording.video_url:
+                        break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    print(f"   Retry {attempt + 1}/{max_retries} for {output_filename}: {e}")
+            
+            if not recording:
+                print(f"❌ Recording not found for {output_filename} after retries.")
+                return None
+            
+            video_url = recording.video_url
+
+            if not video_url:
+                print(f"❌ No video URL found for {output_filename}.")
+                return None
+
+            print(f"   Downloading video from: {video_url}")
+            v_response = requests.get(video_url)
+            with open(output_filename, "wb") as f:
+                f.write(v_response.content)
+            print(f"✅ Saved video segment: {output_filename}")
+            return output_filename
+
+        except Exception as e:
+            print(f"❌ Error generating video segment {output_filename}: {e}")
+            return None
+        finally:
+            await client.disconnect()
 
 
 async def main():
@@ -195,14 +217,16 @@ async def main():
         else:
             print("Skipping video generation for this segment due to image failure.")
 
-    # 4. Generate Videos (Parallel)
+    # 4. Generate Videos (Parallel with concurrency limit)
     video_files = []
     if segment_tasks_data:
         print(
             f"\n🚀 Starting parallel video generation for {len(segment_tasks_data)} segments..."
         )
+        # Create a semaphore to limit to 3 concurrent connections
+        semaphore = asyncio.Semaphore(3)
         tasks = [
-            generate_video_segment_independent(s["image"], s["prompt"], s["output"])
+            generate_video_segment_independent(s["image"], s["prompt"], s["output"], semaphore=semaphore)
             for s in segment_tasks_data
         ]
         results = await asyncio.gather(*tasks)
