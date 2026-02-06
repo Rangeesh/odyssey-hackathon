@@ -1,9 +1,24 @@
 import asyncio
-from odyssey import Odyssey, OdysseyAuthError, OdysseyConnectionError, OdysseyStreamError
+import os
+from dotenv import load_dotenv
+from odyssey import (
+    Odyssey,
+    OdysseyAuthError,
+    OdysseyConnectionError,
+    OdysseyStreamError,
+)
+
+load_dotenv()
+
 
 async def main():
     print("Creating client")
-    client = Odyssey(api_key="API_KEY")
+    api_key = os.environ.get("ODYSSEY_API_KEY")
+    if not api_key:
+        print("Error: ODYSSEY_API_KEY not found in environment variables.")
+        return
+
+    client = Odyssey(api_key=api_key)
     print("Client created")
     stream_id = None
 
@@ -12,7 +27,9 @@ async def main():
         await client.connect(on_video_frame=lambda f: None)
         print("Connected")
 
-        stream_id = await client.start_stream("A serene mountain landscape", portrait=False)
+        stream_id = await client.start_stream(
+            "A serene mountain landscape", portrait=False
+        )
         print("Stream ID:", stream_id)
         print("StreamStarted")
         await client.interact("Add a waterfall on the left")
@@ -41,6 +58,7 @@ async def main():
         print("Preview URL:", recording.preview_url)
         print("Thumbnail URL:", recording.thumbnail_url)
         print("Events URL:", recording.events_url)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

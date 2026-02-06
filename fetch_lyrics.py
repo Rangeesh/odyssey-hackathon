@@ -1,4 +1,6 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 def get_song_lyrics(query):
@@ -12,11 +14,23 @@ def get_song_lyrics(query):
     print(f"🔍 Searching LRCLIB for: '{query}'...")
 
     try:
+        # Configure retries
+        session = requests.Session()
+        retries = Retry(
+            total=5,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET"],
+        )
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+
         # LRCLIB encourages a user agent
         headers = {
             "User-Agent": "OdysseyHackathonBot/1.0 (https://github.com/odysseyml/odyssey-hackathon)"
         }
-        response = requests.get(base_url, params=params, headers=headers)
+
+        # Increased timeout and verify=True (default)
+        response = session.get(base_url, params=params, headers=headers, timeout=15)
         response.raise_for_status()
 
         results = response.json()

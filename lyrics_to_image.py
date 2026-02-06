@@ -21,9 +21,45 @@ def generate_image_from_lyrics(lyrics: str, output_file: str = "lyrics_image.png
 
     # Construct a prompt that encourages artistic interpretation
     prompt = (
-        f"Create a highly detailed, artistic, and mood-evoking digital painting "
-        f"based on the following song lyrics. Capture the emotion and imagery: \n\n"
-        f"'{lyrics}'"
+        f"Create a single cohesive digital illustration in a dark, stylized cartoon aesthetic with clean outlines and controlled detail.\n\n"
+        f"The illustration represents the emotional core and imagery of the following song lyrics:\n"
+        f"“{lyrics}”\n\n"
+        f"Depict one primary scene that symbolically captures the overall mood of the lyrics rather than illustrating each line literally. The theme should remain consistent across the entire image, with a unified visual metaphor that feels calm, slightly melancholic, and introspective.\n\n"
+        f"Subject:\n"
+        f"One central character or focal element that embodies the emotional tone of the song. The character is clearly readable, simply posed, and not performing exaggerated actions. Facial expression and body language convey emotion subtly.\n\n"
+        f"Environment:\n"
+        f"A minimal, atmospheric setting that supports the theme of the lyrics. Background elements are sparse and intentional, with no unnecessary objects. The environment feels like a single moment frozen in time.\n\n"
+        f"Style:\n"
+        f"Dark cartoon illustration style.\n"
+        f"Soft shading, limited color palette.\n"
+        f"Muted tones with one or two accent colors.\n"
+        f"No photorealism.\n"
+        f"No excessive textures.\n"
+        f"No complex patterns.\n\n"
+        f"Composition:\n"
+        f"Centered or slightly off-center composition.\n"
+        f"Clear foreground subject.\n"
+        f"Background remains simple and uncluttered.\n"
+        f"Strong silhouette readability.\n\n"
+        f"Lighting:\n"
+        f"Low-key, moody lighting.\n"
+        f"Soft directional light.\n"
+        f"Gentle contrast, no harsh highlights.\n\n"
+        f"Motion readiness (important):\n"
+        f"The scene should feel stable and grounded, as if it could subtly come alive.\n"
+        f"No extreme poses, no chaotic motion.\n"
+        f"Designed to support gentle animation and continuity.\n\n"
+        f"Constraints:\n"
+        f"No text.\n"
+        f"No lyric words shown visually.\n"
+        f"No multiple scenes.\n"
+        f"No crowded elements.\n"
+        f"No dramatic action.\n"
+        f"No surreal distortions.\n"
+        f"Aspect Ratio: 16:9 landscape.\n\n"
+        f"Overall tone:\n"
+        f"Cohesive, restrained, emotionally focused.\n"
+        f"Designed as a strong starting frame for an interactive or evolving Odyssey simulation."
     )
 
     print(f'🎨 Generating image for lyrics:\n"{lyrics}"\n')
@@ -47,8 +83,7 @@ def generate_image_from_lyrics(lyrics: str, output_file: str = "lyrics_image.png
                         image = part.as_image()
                         image.save(output_file)
                         print(f"\n✅ Success! Image saved to: {output_file}")
-                        image_saved = True
-                        break
+                        return output_file
 
             if not image_saved:
                 print("\n⚠️ The API returned a response, but no image data was found.")
