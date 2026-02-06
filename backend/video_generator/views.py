@@ -18,12 +18,17 @@ def index(request):
     return render(request, "video_generator/index.html", {"jobs": jobs})
 
 
+def about(request):
+    """About page with workflow information"""
+    return render(request, "video_generator/about.html")
+
+
 def search_suggestions(request):
     """Proxy request to LRCLIB search API for suggestions"""
     query = request.GET.get("q", "").strip()
     if not query or len(query) < 2:
         return JsonResponse([], safe=False)
-    
+
     try:
         # Call LRCLIB API
         url = "https://lrclib.net/api/search"
@@ -31,23 +36,25 @@ def search_suggestions(request):
         headers = {
             "User-Agent": "OdysseyHackathonBot/1.0 (https://github.com/odysseyml/odyssey-hackathon)"
         }
-        
+
         response = requests.get(url, params=params, headers=headers, timeout=5)
         response.raise_for_status()
         data = response.json()
-        
+
         # Format suggestions
         suggestions = []
         for item in data[:10]:  # Limit to 10 suggestions
-            suggestions.append({
-                "id": item.get("id"),
-                "title": item.get("trackName"),
-                "artist": item.get("artistName"),
-                "album": item.get("albumName"),
-                "duration": item.get("duration"),
-                "synced": bool(item.get("syncedLyrics"))
-            })
-            
+            suggestions.append(
+                {
+                    "id": item.get("id"),
+                    "title": item.get("trackName"),
+                    "artist": item.get("artistName"),
+                    "album": item.get("albumName"),
+                    "duration": item.get("duration"),
+                    "synced": bool(item.get("syncedLyrics")),
+                }
+            )
+
         return JsonResponse(suggestions, safe=False)
     except Exception as e:
         print(f"Error fetching suggestions: {e}")
@@ -58,12 +65,12 @@ def search_lyrics(request):
     """Search for song lyrics and show preview"""
     query = request.GET.get("q", "").strip()
     jobs = VideoJob.objects.all().order_by("-created_at")[:10]
-    
+
     context = {
         "jobs": jobs,
         "query": query,
     }
-    
+
     if query:
         lyrics = get_song_lyrics(query)
         if lyrics:
@@ -81,7 +88,7 @@ def search_lyrics(request):
                 context["artist"] = "Unknown"
         else:
             context["error_message"] = f"Could not find lyrics for '{query}'."
-    
+
     return render(request, "video_generator/index.html", context)
 
 
@@ -90,10 +97,10 @@ def generate_video(request):
     """Create a new video generation job"""
     song_title = request.POST.get("song_title", "").strip()
     artist = request.POST.get("artist", "").strip()
-    
+
     if not song_title:
         return redirect("index")
-    
+
     job = VideoJob.objects.create(
         song_title=song_title,
         artist=artist,
@@ -101,7 +108,7 @@ def generate_video(request):
         message="Job created, waiting to start...",
     )
     start_generation_thread(job.id)
-    
+
     return redirect("index")
 
 
@@ -116,29 +123,31 @@ def cancel_job(request, job_id):
     """Cancel a video generation job"""
     try:
         job = VideoJob.objects.get(id=job_id)
-        
+
         # Only allow cancelling pending or processing jobs
         if job.status in ["pending", "processing"]:
             job.cancelled = True
             job.status = "cancelled"
             job.message = "Job cancelled by user."
             job.save()
-            
-            return JsonResponse({
-                "success": True,
-                "message": f"Job '{job.song_title}' has been cancelled."
-            })
+
+            return JsonResponse(
+                {
+                    "success": True,
+                    "message": f"Job '{job.song_title}' has been cancelled.",
+                }
+            )
         else:
-            return JsonResponse({
-                "success": False,
-                "message": f"Cannot cancel job with status: {job.status}"
-            }, status=400)
-            
+            return JsonResponse(
+                {
+                    "success": False,
+                    "message": f"Cannot cancel job with status: {job.status}",
+                },
+                status=400,
+            )
+
     except VideoJob.DoesNotExist:
-        return JsonResponse({
-            "success": False,
-            "message": "Job not found."
-        }, status=404)
+        return JsonResponse({"success": False, "message": "Job not found."}, status=404)
 
 
 # REST API ViewSet (keep for API compatibility)

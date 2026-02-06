@@ -8,6 +8,7 @@ from .views import (
     cancel_job,
     search_suggestions,
     search_lyrics,
+    about,
 )
 
 router = DefaultRouter()
@@ -15,6 +16,8 @@ router.register(r"jobs", VideoJobViewSet)
 
 urlpatterns = [
     # Web interface URLs
+    path("", index, name="index"),
+    path("about/", about, name="about"),
     path("search/", search_lyrics, name="search_lyrics"),
     path("generate/", generate_video, name="generate_video"),
     path("search-suggestions/", search_suggestions, name="search_suggestions"),

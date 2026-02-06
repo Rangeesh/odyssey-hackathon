@@ -6,6 +6,7 @@ import requests
 from .models import VideoJob
 from .utils.fetch_lyrics import get_song_lyrics
 from .utils.lyrics_to_image import generate_image_from_lyrics
+from .utils.sentiment_analysis import analyze_sentiment
 from .utils.generate_music_video import (
     parse_lrc_lyrics,
     get_lyrics_for_interval,
@@ -17,14 +18,14 @@ from moviepy import VideoFileClip, concatenate_videoclips
 
 def run_video_generation(job_id):
     job = VideoJob.objects.get(id=job_id)
-    
+
     # Check if cancelled before starting
     if job.cancelled:
         job.status = "cancelled"
         job.message = "Job was cancelled before processing started."
         job.save()
         return
-    
+
     job.status = "processing"
     job.progress = 5
     job.message = "Fetching lyrics..."
@@ -40,7 +41,11 @@ def run_video_generation(job_id):
             job.message = "Lyrics not found."
             job.save()
             return
-        
+
+        # Analyze Sentiment
+        sentiment = analyze_sentiment(raw_lyrics)
+        print(f"Detected sentiment: {sentiment}")
+
         # Check for cancellation
         job.refresh_from_db()
         if job.cancelled:
@@ -67,7 +72,7 @@ def run_video_generation(job_id):
         job.save()
 
         segment_tasks_data = []
-        
+
         # Initialize segments list in DB
         job.segments = []
         job.save()
@@ -81,7 +86,7 @@ def run_video_generation(job_id):
                 job.message = "Job cancelled by user."
                 job.save()
                 return
-            
+
             start_time = i * 10
             end_time = (i + 1) * 10
 
@@ -96,13 +101,15 @@ def run_video_generation(job_id):
 
             # Add placeholder segment to DB
             current_segments = job.segments
-            current_segments.append({
-                "index": i,
-                "lyrics": segment_lyrics,
-                "image": None,
-                "video": None,
-                "status": "generating_image"
-            })
+            current_segments.append(
+                {
+                    "index": i,
+                    "lyrics": segment_lyrics,
+                    "image": None,
+                    "video": None,
+                    "status": "generating_image",
+                }
+            )
             job.segments = current_segments
             job.save()
 
@@ -110,7 +117,7 @@ def run_video_generation(job_id):
                 f"Song: {query}. "
                 f"Mood/Context: {full_lyrics_text[:200]}... "
                 f"Current Scene: {segment_lyrics}. "
-                f"Style: Hand-drawn cartoon on dark background, whimsical, expressive."
+                f"Style: Hand-drawn cartoon, whimsical, expressive."
             )
 
             # Save images in a media folder
@@ -121,7 +128,7 @@ def run_video_generation(job_id):
             vid_filename = os.path.join(output_dir, f"{job.id}_segment_{i}_video.mp4")
 
             generated_img_path = generate_image_from_lyrics(
-                image_prompt, output_file=img_filename
+                image_prompt, output_file=img_filename, sentiment=sentiment
             )
 
             if generated_img_path:
@@ -130,7 +137,9 @@ def run_video_generation(job_id):
                 # Find the segment by index and update it
                 for seg in current_segments:
                     if seg["index"] == i:
-                        seg["image"] = "/" + generated_img_path  # Ensure absolute path for frontend
+                        seg["image"] = (
+                            "/" + generated_img_path
+                        )  # Ensure absolute path for frontend
                         seg["status"] = "image_ready"
                         break
                 job.segments = current_segments
@@ -142,7 +151,7 @@ def run_video_generation(job_id):
                         "image": generated_img_path,
                         "prompt": video_prompt,
                         "output": vid_filename,
-                        "index": i  # Store index to update DB later
+                        "index": i,  # Store index to update DB later
                     }
                 )
 
@@ -157,9 +166,9 @@ def run_video_generation(job_id):
             job.message = "Job cancelled by user."
             job.save()
             return
-        
+
         job.message = "Generating videos (this may take a while)..."
-        
+
         # Update status of segments to generating_video
         current_segments = job.segments
         for seg in current_segments:
@@ -181,11 +190,11 @@ def run_video_generation(job_id):
             return await asyncio.gather(*tasks)
 
         results_with_index = asyncio.run(run_async_generation())
-        
+
         # Process results and update DB
         video_files = []
         current_segments = job.segments
-        
+
         for result, index in results_with_index:
             if result:
                 video_files.append(result)
@@ -195,10 +204,10 @@ def run_video_generation(job_id):
                         seg["video"] = "/" + result
                         seg["status"] = "video_ready"
                         break
-        
+
         job.segments = current_segments
         job.save()
-        
+
         # Check for cancellation after video generation
         job.refresh_from_db()
         if job.cancelled:
@@ -225,11 +234,11 @@ def run_video_generation(job_id):
             # The current path is relative to the backend directory, e.g. "media/generated_content/..."
             # When serving via Django static/media, we usually want the URL path component
             # If MEDIA_URL is "/media/", then we want "generated_content/..."
-            
+
             # Assuming output_dir is "media/generated_content"
             # We want to store "/media/generated_content/..." in the DB if that's how it's served
             # Or just the relative path if using .url on a FileField (but we use CharField)
-            
+
             # Let's make sure it starts with /media/ if it doesn't already
             if not final_output.startswith("/"):
                 db_video_path = "/" + final_output

@@ -5,3 +5,4 @@
 backend/media/generated_content
 outputs
 /backend/video_generator/utils/__pycache__
+/backend/video_generator/utils/__pycache__

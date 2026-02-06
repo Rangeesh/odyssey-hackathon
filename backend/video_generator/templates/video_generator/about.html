@@ -1,0 +1,33 @@
+{% extends "video_generator/base.html" %}
+{% load static %}
+
+{% block title %}About - LYRA{% endblock %}
+
+{% block content %}
+<div class="info-box">
+    <h2>About LYRA</h2>
+    <p>LYRA (LYRics Animated) is an AI-powered music video generator that brings your favorite songs to life.</p>
+    
+    <h3>How It Works</h3>
+    <div class="workflow-image-container">
+        <img src="{% static 'video_generator/images/lyrics_workflow.png' %}" alt="LYRA Workflow Diagram" class="workflow-image">
+    </div>
+
+    <h3>The Process</h3>
+    <ol>
+        <li><strong>Search & Fetch</strong>: We use the LRCLIB API to find time-synced lyrics for your chosen song.</li>
+        <li><strong>Image Generation</strong>: Google Gemini creates artistic illustrations for each segment based on the lyrics and mood.</li>
+        <li><strong>Video Animation</strong>: Odyssey AI animates these static images into dynamic video clips.</li>
+        <li><strong>Stitching</strong>: All video segments are combined into a seamless music video.</li>
+    </ol>
+
+    <h3>Technologies Used</h3>
+    <ul>
+        <li>Django (Backend)</li>
+        <li>Google Gemini (Image Generation)</li>
+        <li>Odyssey AI (Video Generation)</li>
+        <li>LRCLIB (Lyrics Database)</li>
+        <li>MoviePy (Video Processing)</li>
+    </ul>
+</div>
+{% endblock %}

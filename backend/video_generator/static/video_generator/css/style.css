@@ -63,6 +63,48 @@ header {
     justify-content: space-between;
     align-items: center;
     gap: 2rem;
+    margin-bottom: 1rem;
+}
+
+.main-nav {
+    display: flex;
+    gap: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.nav-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+}
+
+.nav-link:hover {
+    background: var(--bg-secondary);
+    color: var(--accent-color);
+}
+
+.nav-link.active {
+    background: var(--accent-color);
+    color: white;
+}
+
+.workflow-image-container {
+    margin: 2rem 0;
+    text-align: center;
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px var(--shadow-color);
+}
+
+.workflow-image {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
 }
 
 .header-text {

@@ -7,6 +7,7 @@ import requests
 from dotenv import load_dotenv
 from .fetch_lyrics import get_song_lyrics
 from .lyrics_to_image import generate_image_from_lyrics
+from .sentiment_analysis import analyze_sentiment
 from odyssey import Odyssey
 
 # Load environment variables
@@ -217,6 +218,10 @@ async def main():
     # Check if we got synced lyrics (LRC)
     is_lrc = "[" in raw_lyrics and "]" in raw_lyrics and ":" in raw_lyrics
 
+    # Analyze sentiment
+    sentiment = analyze_sentiment(raw_lyrics)
+    print(f"🧠 Detected Sentiment: {sentiment}")
+
     full_lyrics_text = raw_lyrics
     parsed_lyrics = []
 
@@ -269,11 +274,11 @@ async def main():
             generated_img_path = img_filename
         else:
             generated_img_path = generate_image_from_lyrics(
-                lyrics_context, output_file=img_filename
+                lyrics_context, output_file=img_filename, sentiment=sentiment
             )
 
         if generated_img_path:
-            video_prompt = f"Subtle animation of {segment_lyrics}, dark cartoon style, minimal motion, atmospheric"
+            video_prompt = f"Subtle animation of {segment_lyrics}, {sentiment.lower()} cartoon style, minimal motion, atmospheric"
             segment_tasks_data.append(
                 {
                     "image": generated_img_path,

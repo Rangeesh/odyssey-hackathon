@@ -8,7 +8,9 @@ from PIL import Image
 load_dotenv()
 
 
-def generate_image_from_lyrics(lyrics: str, output_file: str = "lyrics_image.png"):
+def generate_image_from_lyrics(
+    lyrics: str, output_file: str = "lyrics_image.png", sentiment: str = None
+):
     """
     Generates an image based on the provided song lyrics using Google's Gemini 2.5 Flash Image model.
     """
@@ -19,20 +21,56 @@ def generate_image_from_lyrics(lyrics: str, output_file: str = "lyrics_image.png
 
     client = genai.Client(api_key=api_key)
 
+    # Default style if no sentiment is provided
+    style_description = "dark, stylized cartoon aesthetic"
+    lighting_description = "Low-key, moody lighting"
+    color_palette = "Muted tones with one or two accent colors"
+
+    # Adjust style based on sentiment if provided
+    if sentiment:
+        sentiment_lower = sentiment.lower()
+        if any(
+            x in sentiment_lower
+            for x in ["happy", "joy", "upbeat", "energetic", "fun", "bright"]
+        ):
+            style_description = "bright, colorful, vibrant cartoon aesthetic"
+            lighting_description = "Bright, sunny, high-key lighting"
+            color_palette = "Vibrant, saturated colors with warm tones"
+        elif any(x in sentiment_lower for x in ["angry", "aggressive", "intense"]):
+            style_description = "sharp, edgy, high-contrast cartoon aesthetic"
+            lighting_description = "Dramatic, harsh lighting with strong shadows"
+            color_palette = "High contrast, deep reds, blacks, and stark whites"
+        elif any(x in sentiment_lower for x in ["romantic", "love", "soft"]):
+            style_description = "soft, dreamy, pastel cartoon aesthetic"
+            lighting_description = "Soft, diffused, glowing lighting"
+            color_palette = "Pastels, pinks, purples, and warm whites"
+        elif any(
+            x in sentiment_lower for x in ["sad", "melancholic", "gloomy", "dark"]
+        ):
+            # Keep the original dark style
+            style_description = "dark, stylized cartoon aesthetic"
+            lighting_description = "Low-key, moody lighting"
+            color_palette = "Muted tones, blues, greys, and blacks"
+        else:
+            # Generic/Adaptive style for other sentiments
+            style_description = f"{sentiment.lower()}, stylized cartoon aesthetic"
+            lighting_description = "Atmospheric lighting matching the mood"
+            color_palette = "Colors reflecting the emotional tone"
+
     # Construct a prompt that encourages artistic interpretation
     prompt = (
-        f"Create a single cohesive digital illustration in a dark, stylized cartoon aesthetic with clean outlines and controlled detail.\n\n"
+        f"Create a single cohesive digital illustration in a {style_description} with clean outlines and controlled detail.\n\n"
         f"The illustration represents the emotional core and imagery of the following song lyrics:\n"
         f"“{lyrics}”\n\n"
-        f"Depict one primary scene that symbolically captures the overall mood of the lyrics rather than illustrating each line literally. The theme should remain consistent across the entire image, with a unified visual metaphor that feels calm, slightly melancholic, and introspective.\n\n"
+        f"Depict one primary scene that symbolically captures the overall mood of the lyrics ({sentiment if sentiment else 'melancholic'}) rather than illustrating each line literally. The theme should remain consistent across the entire image, with a unified visual metaphor.\n\n"
         f"Subject:\n"
         f"One central character or focal element that embodies the emotional tone of the song. The character is clearly readable, simply posed, and not performing exaggerated actions. Facial expression and body language convey emotion subtly.\n\n"
         f"Environment:\n"
         f"A minimal, atmospheric setting that supports the theme of the lyrics. Background elements are sparse and intentional, with no unnecessary objects. The environment feels like a single moment frozen in time.\n\n"
         f"Style:\n"
-        f"Dark cartoon illustration style.\n"
+        f"{style_description}.\n"
         f"Soft shading, limited color palette.\n"
-        f"Muted tones with one or two accent colors.\n"
+        f"{color_palette}.\n"
         f"No photorealism.\n"
         f"No excessive textures.\n"
         f"No complex patterns.\n\n"
@@ -42,9 +80,9 @@ def generate_image_from_lyrics(lyrics: str, output_file: str = "lyrics_image.png
         f"Background remains simple and uncluttered.\n"
         f"Strong silhouette readability.\n\n"
         f"Lighting:\n"
-        f"Low-key, moody lighting.\n"
+        f"{lighting_description}.\n"
         f"Soft directional light.\n"
-        f"Gentle contrast, no harsh highlights.\n\n"
+        f"Gentle contrast.\n\n"
         f"Motion readiness (important):\n"
         f"The scene should feel stable and grounded, as if it could subtly come alive.\n"
         f"No extreme poses, no chaotic motion.\n"
@@ -62,7 +100,9 @@ def generate_image_from_lyrics(lyrics: str, output_file: str = "lyrics_image.png
         f"Designed as a strong starting frame for an interactive or evolving Odyssey simulation."
     )
 
-    print(f'🎨 Generating image for lyrics:\n"{lyrics}"\n')
+    print(
+        f'🎨 Generating image for lyrics:\n"{lyrics[:50]}..."\nSentiment: {sentiment}'
+    )
     print("Waiting for API response (this might take a moment)...")
 
     max_retries = 3
