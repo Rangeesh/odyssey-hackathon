@@ -19,7 +19,6 @@ dependencies = [
   "pytest>=7.4.0",
   "odyssey @ git+https://github.com/odysseyml/odyssey-python.git",
   "google-genai",
-  "Pillow",
 ]
 
 [tool.setuptools]

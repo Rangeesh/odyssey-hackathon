@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LYRA - LYRics Animated{% endblock %}</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'video_generator/css/style.css' %}">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1>🎵 LYRA - LYRics Animated</h1>
+                    <p class="tagline">AI-Powered Music Video Generator</p>
+                </div>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 LYRA. Powered by Google Gemini & Odyssey AI.</p>
+        </div>
+    </footer>
+
+    <script src="{% static 'video_generator/js/app.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

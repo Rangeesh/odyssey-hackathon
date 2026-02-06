@@ -4,8 +4,8 @@ import re
 import time
 import requests
 from dotenv import load_dotenv
-from fetch_lyrics import get_song_lyrics
-from lyrics_to_image import generate_image_from_lyrics
+from .fetch_lyrics import get_song_lyrics
+from .lyrics_to_image import generate_image_from_lyrics
 from odyssey import Odyssey
 
 # Load environment variables
@@ -13,7 +13,7 @@ load_dotenv()
 
 # Try importing moviepy, handle if missing
 try:
-    from moviepy.editor import VideoFileClip, concatenate_videoclips
+    from moviepy import VideoFileClip, concatenate_videoclips
 
     MOVIEPY_AVAILABLE = True
 except ImportError:

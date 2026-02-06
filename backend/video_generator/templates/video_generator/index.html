@@ -1,0 +1,130 @@
+{% extends "video_generator/base.html" %}
+
+{% block content %}
+<div class="search-section">
+    <h2>Generate Music Video</h2>
+    <p class="instruction">First, search for a song to preview the lyrics. Then generate your video.</p>
+    
+    <form method="get" action="{% url 'search_lyrics' %}">
+        <div class="search-box-container">
+            <div class="search-box">
+                <input type="text" 
+                       name="q" 
+                       id="song-input" 
+                       placeholder="Enter song name and artist (e.g., Bohemian Rhapsody Queen)"
+                       value="{{ query|default:'' }}"
+                       autocomplete="off"
+                       required>
+                <button type="submit" class="generate-btn">🔍 Find Lyrics</button>
+            </div>
+            <div id="search-suggestions" class="suggestions-dropdown" style="display: none;"></div>
+        </div>
+    </form>
+
+    {% if error_message %}
+    <div class="error-message">
+        <p>❌ {{ error_message }}</p>
+    </div>
+    {% endif %}
+
+    {% if lyrics %}
+    <div class="lyrics-preview">
+        <h3>✓ Lyrics Found!</h3>
+        <div class="lyrics-text">{{ lyrics|linebreaks }}</div>
+        
+        <form method="post" action="{% url 'generate_video' %}">
+            {% csrf_token %}
+            <input type="hidden" name="song_title" value="{{ song_title }}">
+            <input type="hidden" name="artist" value="{{ artist }}">
+            <div class="generate-actions">
+                <button type="submit" class="generate-btn">🎬 Generate Video</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if not lyrics %}
+    <div class="info-box">
+        <h3>💡 How it works:</h3>
+        <ol>
+            <li>Search for a song to find its lyrics</li>
+            <li>Review the lyrics to ensure they are correct</li>
+            <li>Click "Generate Video" to start the AI process</li>
+            <li>Watch as images are created for each scene</li>
+            <li>Enjoy your final animated music video!</li>
+        </ol>
+        <p><strong>Note:</strong> Video generation can take 5-10 minutes depending on the song length.</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="jobs-section">
+    <h2>Recent Video Jobs</h2>
+    <div id="jobs-list">
+        {% include "video_generator/job_list_partial.html" %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Auto-refresh jobs every 3 seconds
+    setInterval(function() {
+        fetch('{% url "job_list_partial" %}')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('jobs-list').innerHTML = html;
+            })
+            .catch(error => console.error('Error refreshing jobs:', error));
+    }, 3000);
+
+    // Cancel job function
+    function cancelJob(jobId) {
+        if (!confirm('Are you sure you want to cancel this video generation?')) {
+            return;
+        }
+
+        fetch(`/cancel/${jobId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                // Refresh the job list immediately
+                fetch('{% url "job_list_partial" %}')
+                    .then(response => response.text())
+                    .then(html => {
+                        document.getElementById('jobs-list').innerHTML = html;
+                    });
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error cancelling job:', error);
+            alert('Failed to cancel job. Please try again.');
+        });
+    }
+
+    // Get CSRF token from cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+</script>
+{% endblock %}
