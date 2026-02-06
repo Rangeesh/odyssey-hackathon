@@ -7,4 +7,5 @@ google-genai
 Pillow
 gunicorn
 whitenoise
+moviepy
 git+https://github.com/odysseyml/odyssey-python.git
